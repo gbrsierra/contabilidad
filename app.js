@@ -1,18 +1,60 @@
 class FinanceApp {
     constructor() {
-        // Carga de datos con fallback al ejemplo proporcionado por el usuario para 2023
+        // Carga inicial desde localStorage (caché local)
         const savedData = localStorage.getItem('financeData');
         this.data = savedData ? JSON.parse(savedData) : this.getInitialData();
-        
         this.currentYear = localStorage.getItem('currentYear') || "2023";
         this.months = [
             'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
             'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
         ];
         this.showOnlyDataMonths = false;
-        
+
         this.init();
+        this.initFirestore();
     }
+
+    // ─── FIREBASE ────────────────────────────────────────────────────────────
+
+    initFirestore() {
+        const docRef = db.collection('contabilidad').doc('datos');
+
+        // Escucha en tiempo real: actualiza la app cuando hay cambios desde otro dispositivo
+        docRef.onSnapshot((doc) => {
+            // Si el cambio viene de este mismo dispositivo (todavía pendiente de sync), ignorar
+            if (doc.metadata.hasPendingWrites) return;
+
+            if (doc.exists) {
+                const remote = doc.data();
+                this.data = remote.financeData;
+                this.currentYear = remote.currentYear || this.currentYear;
+
+                // Actualizar caché local
+                localStorage.setItem('financeData', JSON.stringify(this.data));
+                localStorage.setItem('currentYear', this.currentYear);
+                this.render();
+            }
+            this.setSyncStatus('synced');
+        }, (error) => {
+            console.error('Error Firestore:', error);
+            this.setSyncStatus('error');
+        });
+    }
+
+    setSyncStatus(status) {
+        const el = document.getElementById('syncIndicator');
+        if (!el) return;
+        const states = {
+            syncing: { text: '🔄 Guardando...', cls: 'sync-indicator syncing' },
+            synced:  { text: '☁️ Sincronizado',  cls: 'sync-indicator synced' },
+            error:   { text: '⚠️ Sin conexión',  cls: 'sync-indicator error' }
+        };
+        const s = states[status] || states.error;
+        el.textContent = s.text;
+        el.className = s.cls;
+    }
+
+    // ─── CORE ────────────────────────────────────────────────────────────────
 
     getInitialData() {
         return {
@@ -47,7 +89,7 @@ class FinanceApp {
         this.tableHeader = document.getElementById('tableHeader');
         this.tableBody = document.getElementById('tableBody');
         this.tableFooter = document.getElementById('tableFooter');
-        
+
         // Modal
         this.accountModal = document.getElementById('accountModal');
         this.accountNameInput = document.getElementById('accountName');
@@ -62,15 +104,29 @@ class FinanceApp {
         this.toggleMonthsBtn.onclick = () => this.toggleMonthVisibility();
         this.cancelModalBtn.onclick = () => this.hideModal();
         this.saveAccountBtn.onclick = () => this.addAccount();
-        
+
         window.onclick = (event) => {
             if (event.target == this.accountModal) this.hideModal();
         };
     }
 
     save() {
+        // 1. Guardar en localStorage (caché local)
         localStorage.setItem('financeData', JSON.stringify(this.data));
         localStorage.setItem('currentYear', this.currentYear);
+
+        // 2. Guardar en Firestore (nube)
+        this.setSyncStatus('syncing');
+        db.collection('contabilidad').doc('datos').set({
+            financeData: this.data,
+            currentYear: this.currentYear,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(() => {
+            this.setSyncStatus('synced');
+        }).catch((err) => {
+            console.error('Error guardando en Firestore:', err);
+            this.setSyncStatus('error');
+        });
     }
 
     render() {
@@ -100,12 +156,12 @@ class FinanceApp {
         if (year && !this.data[year]) {
             const prevYear = Object.keys(this.data).sort().reverse()[0];
             const accounts = this.data[prevYear] ? Object.keys(this.data[prevYear].accounts) : [];
-            
+
             this.data[year] = { accounts: {} };
             accounts.forEach(acc => {
                 this.data[year].accounts[acc] = new Array(12).fill(0);
             });
-            
+
             this.currentYear = year;
             this.render();
             this.save();
@@ -148,8 +204,7 @@ class FinanceApp {
 
     renderTable() {
         const accounts = Object.keys(this.data[this.currentYear].accounts);
-        
-        // Determinar qué meses mostrar
+
         const visibleMonthIndices = [];
         if (this.showOnlyDataMonths) {
             for (let mIdx = 0; mIdx < 12; mIdx++) {
@@ -171,18 +226,17 @@ class FinanceApp {
             this.tableHeader.appendChild(th);
         });
 
-        // Body: Cada cuenta es una fila
+        // Body
         this.tableBody.innerHTML = '';
         accounts.forEach(acc => {
             const tr = document.createElement('tr');
-            
-            // Nombre de cuenta + botón borrar
+
             const tdName = document.createElement('td');
             tdName.className = 'account-name-cell';
             tdName.innerHTML = `<span>${acc}</span> <span class="delete-acc" title="Eliminar cuenta">×</span>`;
             tdName.querySelector('.delete-acc').onclick = () => this.deleteAccount(acc);
             tr.appendChild(tdName);
-            
+
             visibleMonthIndices.forEach(mIdx => {
                 const val = this.data[this.currentYear].accounts[acc][mIdx];
                 const td = document.createElement('td');
@@ -191,20 +245,20 @@ class FinanceApp {
                 input.className = 'finance-input';
                 input.value = this.formatNumber(val);
                 input.placeholder = '0,00';
-                
+
                 input.onfocus = (e) => {
                     const rawVal = this.data[this.currentYear].accounts[acc][mIdx];
                     e.target.value = rawVal === 0 ? '' : rawVal.toString().replace('.', ',');
                 };
-                
+
                 input.onchange = (e) => {
                     this.updateValue(acc, mIdx, e.target.value);
                 };
-                
+
                 td.appendChild(input);
                 tr.appendChild(td);
             });
-            
+
             this.tableBody.appendChild(tr);
         });
 
@@ -213,7 +267,7 @@ class FinanceApp {
 
     renderFooter(accounts, visibleMonthIndices) {
         this.tableFooter.innerHTML = '<td><strong>TOTAL MENSUAL</strong></td>';
-        
+
         const monthlyTotals = new Array(12).fill(0);
         accounts.forEach(acc => {
             this.data[this.currentYear].accounts[acc].forEach((val, mIdx) => {
@@ -232,7 +286,7 @@ class FinanceApp {
     updateValue(acc, monthIdx, value) {
         const numVal = this.parseNumber(value);
         this.data[this.currentYear].accounts[acc][monthIdx] = numVal;
-        this.render(); 
+        this.render();
         this.save();
     }
 
