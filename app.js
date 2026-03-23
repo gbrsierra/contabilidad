@@ -9,6 +9,7 @@ class FinanceApp {
             'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
         ];
         this.showOnlyDataMonths = false;
+        this.saveTimeout = null;
 
         this.init();
         this.initFirestore();
@@ -33,8 +34,18 @@ class FinanceApp {
                 localStorage.setItem('financeData', JSON.stringify(this.data));
                 localStorage.setItem('currentYear', this.currentYear);
                 this.render();
+                this.setSyncStatus('synced');
+            } else {
+                // Si no existe nada en la nube todavía (primera vez), 
+                // pero tenemos datos locales que no son los de ejemplo, los subimos.
+                const isInitialDefault = JSON.stringify(this.data) === JSON.stringify(this.getInitialData());
+                if (!isInitialDefault) {
+                    console.log('Detectados datos locales. Inicializando servidor...');
+                    this.save();
+                } else {
+                    this.setSyncStatus('synced');
+                }
             }
-            this.setSyncStatus('synced');
         }, (error) => {
             console.error('Error Firestore:', error);
             this.setSyncStatus('error');
@@ -111,6 +122,21 @@ class FinanceApp {
     }
 
     save() {
+        // Limpiar cualquier timeout pendiente de guardado debounced
+        if (this.saveTimeout) clearTimeout(this.saveTimeout);
+        
+        this._performSave();
+    }
+
+    // Guardado con debounce para mejorar el rendimiento de la sincronización
+    saveDebounced() {
+        if (this.saveTimeout) clearTimeout(this.saveTimeout);
+        this.saveTimeout = setTimeout(() => {
+            this._performSave();
+        }, 800); // 800ms de espera antes de subir a la nube
+    }
+
+    _performSave() {
         // 1. Guardar en localStorage (caché local)
         localStorage.setItem('financeData', JSON.stringify(this.data));
         localStorage.setItem('currentYear', this.currentYear);
@@ -287,7 +313,7 @@ class FinanceApp {
         const numVal = this.parseNumber(value);
         this.data[this.currentYear].accounts[acc][monthIdx] = numVal;
         this.render();
-        this.save();
+        this.saveDebounced();
     }
 
     deleteAccount(name) {

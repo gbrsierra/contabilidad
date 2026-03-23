@@ -192,9 +192,9 @@ tr:hover td {
 th:first-child, td:first-child {
     position: sticky;
     left: 0;
-    z-index: 10;
+    z-index: 100; /* Incrementado para asegurar prioridad */
     background: #1e293b;
-    border-right: 1px solid var(--glass-border);
+    border-right: 2px solid var(--primary); /* Borde más visible para separar del resto */
     min-width: 220px;
 }
 
@@ -448,6 +448,11 @@ tfoot td:first-child {
     th:first-child, td:first-child {
         min-width: 150px;
         padding-left: 0.75rem;
+        position: sticky; /* Re-establecer explícitamente */
+        left: 0;
+        z-index: 100;
+        background: #1e293b; /* Asegurar fondo opaco en móvil */
+        box-shadow: 4px 0 10px rgba(0,0,0,0.3); /* Sombra para dar profundidad al scroll */
     }
 
     .finance-input {
