@@ -251,6 +251,12 @@ class FinanceApp {
             th.innerText = this.months[mIdx];
             this.tableHeader.appendChild(th);
         });
+        
+        // Columna Total Anual
+        const totalTh = document.createElement('th');
+        totalTh.innerText = 'Total Anual';
+        totalTh.className = 'col-total';
+        this.tableHeader.appendChild(totalTh);
 
         // Body
         this.tableBody.innerHTML = '';
@@ -285,6 +291,13 @@ class FinanceApp {
                 tr.appendChild(td);
             });
 
+            // Celda de Total por cuenta
+            const annualTotal = this.data[this.currentYear].accounts[acc].reduce((a, b) => a + b, 0);
+            const tdTotal = document.createElement('td');
+            tdTotal.className = 'col-total';
+            tdTotal.innerHTML = `<strong>${this.formatCurrency(annualTotal)}</strong>`;
+            tr.appendChild(tdTotal);
+
             this.tableBody.appendChild(tr);
         });
 
@@ -307,6 +320,13 @@ class FinanceApp {
             td.innerHTML = `<strong>${this.formatCurrency(mTotal)}</strong>`;
             this.tableFooter.appendChild(td);
         });
+
+        // Gran Total (esquina inferior derecha)
+        const grandTotal = monthlyTotals.reduce((a, b) => a + b, 0);
+        const tdGrand = document.createElement('td');
+        tdGrand.className = 'col-total';
+        tdGrand.innerHTML = `<strong>${this.formatCurrency(grandTotal)}</strong>`;
+        this.tableFooter.appendChild(tdGrand);
     }
 
     updateValue(acc, monthIdx, value) {
